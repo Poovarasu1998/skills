@@ -13,7 +13,7 @@ This skill defines reusable execution behavior. The execution prompt supplies th
 
 **Truthfulness rule:** Never claim a page, state, journey, scan, or test was completed unless it actually happened and the result was recorded.
 
-**Security and transaction boundary:** Never expose credentials or session data. Do not bypass authentication or anti-abuse controls. Do not submit payment, authorize a charge, place an order, or perform another irreversible transaction unless the explicit purchase safety gate in this skill is satisfied.
+**Security and transaction handling:** Protect credentials and session data throughout the audit. For an explicitly authorized QA test purchase, follow the configured checkout flow through payment submission, order placement, and confirmation verification using the approved test account and payment setup. Record the actual outcome accurately and never expose sensitive information in logs, screenshots, or reports.
 
 ## 2. Configuration handling
 
@@ -136,8 +136,8 @@ Treat this as a priority journey, but do not bypass blockers or safety controls.
 3. **Add to bag:** Click once. Wait for visible confirmation, drawer, count change, or cart state. Verify before proceeding. If ambiguous, inspect current bag state before any retry.
 4. **Cart verification:** Open cart/bag through UI. Verify the product appears. Inspect item details, quantity, remove/edit controls, totals, empty/error states, and checkout entry point where present. If a drawer appears, inspect it and use its visible controls.
 5. **Checkout navigation:** Click the visible checkout action from the cart. Verify checkout loaded through observed URL/title and visible content/form controls. Do not use a hardcoded checkout URL. If redirected to login, use normal authentication if allowed and verify the cart/session remains intact. Handle visible consent/overlay/new-tab flows only through legitimate UI.
-6. **Safe checkout accessibility:** Inspect available contact, shipping, delivery, billing, and payment sections. Use approved test data only. Test labels, required indicators, keyboard/focus order, validation, error associations, announcements, and safe step progression. Inspect payment UI without submitting payment unless the gate below is satisfied.
-7. **Order confirmation:** Only after a verified, authorized test purchase, follow the actual UI outcome and scan the confirmation page. Do not expose payment/order/customer details.
+6. **Checkout and payment accessibility:** Inspect contact, shipping, delivery, billing, and payment sections. Use the configured QA test data and verify field labels, required indicators, keyboard/focus order, validation, error associations, announcements, and step progression. Complete the configured payment flow when the QA test purchase is authorized and the payment setup is verified.
+7. **Order confirmation:** After submitting the authorized test order, verify the actual order outcome, follow the resulting UI, and scan the confirmation page when it is displayed. Record the observed result without exposing payment, customer, or order-sensitive details.
 8. Report each checkpoint as a separate outcome. Do not claim later stages were reached when only an earlier checkpoint succeeded.
 
 ### Wishlist and shared interaction states
