@@ -13,16 +13,31 @@ This skill defines reusable execution behavior. The execution prompt supplies th
 
 **Truthfulness rule:** Never claim a page, state, journey, scan, or test was completed unless it actually happened and the result was recorded.
 
-**Security and transaction handling:** Protect credentials and session data throughout the audit. For an explicitly authorized QA test purchase, follow the configured checkout flow through payment submission, order placement, and confirmation verification using the approved test account and payment setup. Record the actual outcome accurately and never expose sensitive information in logs, screenshots, or reports.
+**Security and transaction boundary:** Never expose credentials or session data. Do not bypass authentication or anti-abuse controls. When `RUN_CHECKOUT_ORDER=true`, the prompt explicitly authorizes one QA test order, and a configured QA payment method is available, completing one order through the normal UI and reaching its confirmation outcome is a required journey—not an optional step. Never exceed `MAX_TEST_ORDERS`. If the required authorization, test account, or QA payment setup is absent, stop before payment submission and report the exact blocker. Never place a real customer order or make an unauthorized purchase.
 
-## 2. Configuration handling
+## 2. Execution flags and configuration handling
+
+The execution prompt is the source of truth for application-specific values, limits, and journey flags. Run only journeys whose flags are `true`; do not run disabled journeys merely because they are described in this skill. If a flag is missing or blank, treat it as `false` and record it as unspecified.
+
+Supported journey flags:
+- `RUN_HOME_DISCOVERY`: home page, global navigation, footer, and general site discovery.
+- `RUN_CATEGORY_SEARCH`: category/listing, search, filters, sorting, and pagination.
+- `RUN_PRODUCT_DETAILS`: representative product detail pages and product controls.
+- `RUN_LOGIN`: sign-in form, approved authentication, and authentication verification.
+- `RUN_CART_CHECKOUT`: add-to-bag and cart inspection.
+- `RUN_CHECKOUT_ORDER`: checkout forms, authorized QA payment submission, order placement, and confirmation-page scan. This flag requires `RUN_LOGIN=true` when authentication is required, and requires the prompt to authorize one QA test order and provide an approved QA payment method.
+- `RUN_WISHLIST`: wishlist journey when available and eligible.
+- `RUN_RESPONSIVE_STATES`: responsive viewport and related state checks.
+
+A journey may use shared prerequisites (for example, login before checkout) only when those prerequisites are enabled or explicitly required by an enabled journey. Do not expand execution into unrelated journeys. The maximum limits remain ceilings. If `RUN_CHECKOUT_ORDER=true` and its prerequisites are satisfied, the audit must attempt to complete exactly one authorized QA order and scan the confirmation page. If a blocker prevents completion, record the precise checkpoint and continue other enabled, safe journeys.
+
 
 1. Read the execution prompt and use only its configured values.
 2. Keep application-specific values out of reusable skill rules.
 3. Treat blank values as unspecified. Never invent URLs, selectors, credentials, behaviors, or exceptions.
 4. Retrieve credentials only through the approved secret manager/runtime mechanism. Do not hardcode secrets in prompts, scripts, logs, screenshots, traces, or reports.
 5. If credentials appear to have been exposed, do not repeat them; advise the environment owner to rotate them.
-6. Discover sign-in fields and actions from rendered UI and accessible attributes. Reuse the authenticated browser context when supported.
+6. For `RUN_LOGIN=true`, discover sign-in fields and actions from rendered UI and accessible attributes. Reuse the authenticated browser context when supported. Credentials remain in the execution prompt/runtime secret mechanism; never copy them into logs or reports.
 7. Verify authentication with reliable evidence such as account navigation or customer-specific content. A successful click alone is not proof.
 8. If authentication fails, record the current URL, visible step, and sanitized error. Make at most one safe retry for a clearly transient failure. Do not repeatedly submit credentials, create accounts, reset passwords, alter account details, or bypass MFA/phone verification/CAPTCHA. Mark authenticated-only journeys blocked and continue public journeys.
 
@@ -122,22 +137,23 @@ Run each journey when the functionality exists, is accessible, and is safe. Cont
 - Select a required variant only when needed to add the product.
 
 ### Authentication and account
+- Run the standalone login journey when `RUN_LOGIN=true`; also perform login as a prerequisite when an enabled protected journey requires it.
 - Discover sign-in through UI; inspect form and safe validation states.
 - Authenticate only through approved credentials and legitimate flow.
 - Verify success before protected journeys.
 - Do not edit/save personal details, cancel orders, or perform destructive actions.
 - If authentication fails or unsupported verification is required, document it and continue public journeys.
 
-### Add one item, cart, and checkout — priority journey
-Treat this as a priority journey, but do not bypass blockers or safety controls.
+### Add one item, cart, and checkout — controlled required journey
+Run this section only when the relevant cart/checkout flags are enabled. When `RUN_CHECKOUT_ORDER=true` and the QA purchase prerequisites are satisfied, the journey is mandatory: attempt product selection, add-to-bag, cart verification, checkout, authorized QA payment submission, order placement, and confirmation-page scan in sequence. Do not stop after merely reaching checkout. Do not bypass blockers or safety controls; if any checkpoint cannot be completed, document the exact blocker and do not claim the order was placed.
 
 1. **Product selected:** Navigate from a UI-discovered listing/search result to a suitable product page. Record only necessary product identity.
 2. **Required options:** Select required size/color/variant using rendered controls. If unavailable, try one alternate eligible product within limits, then document the blocker.
 3. **Add to bag:** Click once. Wait for visible confirmation, drawer, count change, or cart state. Verify before proceeding. If ambiguous, inspect current bag state before any retry.
 4. **Cart verification:** Open cart/bag through UI. Verify the product appears. Inspect item details, quantity, remove/edit controls, totals, empty/error states, and checkout entry point where present. If a drawer appears, inspect it and use its visible controls.
 5. **Checkout navigation:** Click the visible checkout action from the cart. Verify checkout loaded through observed URL/title and visible content/form controls. Do not use a hardcoded checkout URL. If redirected to login, use normal authentication if allowed and verify the cart/session remains intact. Handle visible consent/overlay/new-tab flows only through legitimate UI.
-6. **Checkout and payment accessibility:** Inspect contact, shipping, delivery, billing, and payment sections. Use the configured QA test data and verify field labels, required indicators, keyboard/focus order, validation, error associations, announcements, and step progression. Complete the configured payment flow when the QA test purchase is authorized and the payment setup is verified.
-7. **Order confirmation:** After submitting the authorized test order, verify the actual order outcome, follow the resulting UI, and scan the confirmation page when it is displayed. Record the observed result without exposing payment, customer, or order-sensitive details.
+6. **Safe checkout accessibility:** Inspect available contact, shipping, delivery, billing, and payment sections. Use approved test data only. Test labels, required indicators, keyboard/focus order, validation, error associations, announcements, and safe step progression. Inspect payment UI without submitting payment unless the gate below is satisfied.
+7. **Order confirmation:** Only after a verified, authorized test purchase, follow the actual UI outcome and scan the confirmation page. Do not expose payment/order/customer details.
 8. Report each checkpoint as a separate outcome. Do not claim later stages were reached when only an earlier checkpoint succeeded.
 
 ### Wishlist and shared interaction states
@@ -294,7 +310,7 @@ Produce one Markdown report using the configured filename. Include these section
 1. **Audit Metadata** — application, environment, base URL, audit timestamp/timezone, browser/Playwright/axe versions if available, WCAG tags, configured limits, report filename.
 2. **Accessibility Health Check** — score/grade or reason not calculated, audit status, axe status, severity counts, incomplete/manual checks, pages/states scanned, scoring formula and calculation.
 3. **Executive Summary** — overall status; unique pages discovered, attempted, loaded, scanned, partially scanned, failed, and not reached; key findings; severity distribution; important technical failures and limitations.
-4. **Journey Coverage** — every required journey, checkpoints completed, status, evidence, and blocker.
+4. **Journey Coverage** — every enabled journey, each disabled journey marked `NOT RUN (flag=false)`, checkpoints completed, status, evidence, and blocker. Include the resolved journey-flag values.
 5. **Page Inventory** — observed URL, page type, navigation path, auth requirement, attempt count, status, axe status, and evidence.
 6. **Technical Errors and Recovery Log** — sanitized error, last successful checkpoint, retries/recovery, and coverage impact.
 7. **Accessibility Findings** — deduplicated findings, severity, supported WCAG/axe mapping, evidence, affected pages, and remediation.
@@ -316,7 +332,8 @@ Produce one Markdown report using the configured filename. Include these section
 ## 12. Completion gate
 
 Before finalizing, verify each applicable item:
-- [ ] Base page reached and scanned, or exact blocker documented.
+- [ ] Every journey flag recorded; only enabled journeys executed.
+- [ ] Base page reached and scanned, or exact blocker documented (when the relevant journey is enabled).
 - [ ] Header/navigation and footer discovery attempted.
 - [ ] Representative category/listing pages scanned within limits.
 - [ ] Search and no-results state tested if available.
@@ -341,4 +358,4 @@ If only a few pages were scanned, do not call the audit comprehensive. Explain w
 
 ## 13. Final execution rule
 
-Use the configured application values, discover UI controls dynamically, preserve browser/context integrity, follow scan limits and safety boundaries, prioritize the real cart-to-checkout path through UI interactions, continue other safe journeys after failures, execute every step in the Mandatory calculation procedure in Section 9, and produce one consolidated sanitized Markdown report. Never include secrets.
+Use configured application values and journey flags, discover UI controls dynamically, preserve browser/context integrity, follow scan limits and safety boundaries, and execute only enabled journeys. When `RUN_CHECKOUT_ORDER=true` and the configured QA authorization/payment prerequisites are satisfied, complete one order through the UI and scan its confirmation page; do not treat order creation as optional. Continue other enabled safe journeys after failures, execute every step in the Mandatory calculation procedure in Section 9, and produce one consolidated sanitized Markdown report. Never include secrets.
